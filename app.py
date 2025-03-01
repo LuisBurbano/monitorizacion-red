@@ -60,16 +60,24 @@ def capture_traffic():
         if packet.haslayer("IP"):
             ip_src = packet["IP"].src
             ip_dst = packet["IP"].dst
+
+            # 🚨 Filtrar IPs excluidas
+            excluded_ips = get_excluded_ips()  # Obtiene la lista de IPs excluidas
+            if ip_src in excluded_ips or ip_dst in excluded_ips:
+                return  # ❌ Ignorar paquete si la IP está en la lista de excluidas
+
             detected_packets.append({
                 "origen": ip_src,
                 "destino": ip_dst,
                 "protocolo": packet.summary()
             })
+
         if len(detected_packets) > 50:  # Evita que la lista crezca indefinidamente
             detected_packets.pop(0)
 
     while scan_active and not stop_event.is_set():
         sniff(prn=process_packet, store=False, timeout=5)
+
 
 # 🔹 API para controlar el escaneo de tráfico
 @app.route('/toggle_scan', methods=['POST', 'GET'])
