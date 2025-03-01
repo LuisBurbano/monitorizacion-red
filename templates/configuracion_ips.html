@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gestión de IPs</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="{{ url_for('static', filename='js/configuracion.js') }}" defer></script>
+</head>
+<body class="container mt-5">
+    <h1 class="text-center">Gestión de IPs</h1>
+
+    <h2>IPs Excluidas</h2>
+    <input type="text" id="excludeIpInput" class="form-control mb-2" placeholder="Agregar IP a Excluir">
+    <button class="btn btn-warning" onclick="addExcludedIp()">Agregar</button>
+
+    <h2>IPs Bloqueadas</h2>
+    <input type="text" id="blockIpInput" class="form-control mb-2" placeholder="Agregar IP a Bloquear">
+    <button class="btn btn-danger" onclick="blockIp()">Bloquear</button>
+
+    <h2 class="mt-4">IPs Guardadas</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>IP</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ip in blocked_ips %}
+            <tr>
+                <td>{{ ip }}</td>
+                <td><button class="btn btn-success" onclick="unblockIp('{{ ip }}')">Desbloquear</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

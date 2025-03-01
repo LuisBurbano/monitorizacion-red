@@ -1,0 +1,25 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f8f9fa;
+    margin: 20px;
+}
+
+h1, h2 {
+    text-align: center;
+}
+
+.table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    margin-top: 20px;
+}
+
+th, td {
+    text-align: center;
+    vertical-align: middle;
+}
+
+button {
+    cursor: pointer;
+}

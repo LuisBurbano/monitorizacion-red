@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Eventos Detectados</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/eventos.js') }}" defer></script>
+</head>
+<body class="container mt-5">
+    <h1>Eventos de Seguridad</h1>
+
+    <button onclick="window.location.href='/'" class="btn btn-secondary mb-3">
+        Volver a la Página Principal
+    </button>
+
+    <div class="mb-3">
+        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por IP...">
+    </div>
+
+    <div class="table-container">
+        <table class="table table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Tipo de Ataque</th>
+                    <th>IP Origen</th>
+                    <th>Paquetes</th>
+                    <th>Fecha</th>
+                </tr>
+            </thead>
+            <tbody id="eventTable">
+                {% for evento in datos %}
+                <tr>
+                    <td>{{ evento["id"] }}</td>
+                    <td>{{ evento["tipo_ataque"] }}</td>
+                    <td>{{ evento["ip_origen"] }}</td>
+                    <td>{{ evento["paquetes"] }}</td>
+                    <td>{{ evento["timestamp"] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>
