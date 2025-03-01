@@ -13,35 +13,39 @@ DB_PATH = "datos.db"
 
 # 🔹 Inicializar la base de datos si no existe
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS eventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo_ataque TEXT NOT NULL,
-            ip_origen TEXT NOT NULL,
-            paquetes INTEGER NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ips_bloqueadas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ip TEXT UNIQUE NOT NULL
-        )
-    """)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS eventos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo_ataque TEXT NOT NULL,
+                ip_origen TEXT NOT NULL,
+                paquetes INTEGER NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ips_bloqueadas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT UNIQUE NOT NULL
+            )
+        """)
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ips_excluidas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ip TEXT UNIQUE NOT NULL
-        )
-    """)
-    
-    conn.commit()
-    conn.close()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ips_excluidas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT UNIQUE NOT NULL
+            )
+        """)
+        
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Error al inicializar la base de datos: {e}")
+    finally:
+        conn.close()
 
 init_db()
 
@@ -50,24 +54,31 @@ def capture_traffic():
     global detected_packets
 
     def process_packet(packet):
+        if not scan_active or stop_event.is_set():
+            return
+
         if packet.haslayer("IP"):
             ip_src = packet["IP"].src
             ip_dst = packet["IP"].dst
             detected_packets.append({
-                "source": ip_src,
-                "destination": ip_dst,
-                "protocol": packet.summary()
+                "origen": ip_src,
+                "destino": ip_dst,
+                "protocolo": packet.summary()
             })
         if len(detected_packets) > 50:  # Evita que la lista crezca indefinidamente
             detected_packets.pop(0)
 
-    while not stop_event.is_set():
+    while scan_active and not stop_event.is_set():
         sniff(prn=process_packet, store=False, timeout=5)
 
 # 🔹 API para controlar el escaneo de tráfico
-@app.route('/toggle_scan', methods=['POST'])
+@app.route('/toggle_scan', methods=['POST', 'GET'])
 def toggle_scan():
     global scan_active, stop_event
+
+    if request.method == 'GET':
+        return jsonify({"status": scan_active})
+
     scan_active = not scan_active
 
     if scan_active:
@@ -77,19 +88,25 @@ def toggle_scan():
     else:
         stop_event.set()
 
-    return jsonify({"status": "activated" if scan_active else "deactivated"})
+    return jsonify({"status": scan_active}), 200
 
 # 🔹 API para obtener paquetes en tiempo real
 @app.route('/get_packets', methods=['GET'])
 def get_packets():
     return jsonify(detected_packets)
 
-# 🔹 API para manejar IPs bloqueadas y excluidas
+# 🔹 Funciones de base de datos con manejo de errores
 def get_db_connection():
-    return sqlite3.connect(DB_PATH)
+    try:
+        return sqlite3.connect(DB_PATH)
+    except sqlite3.Error as e:
+        print(f"Error al conectar a la base de datos: {e}")
+        return None
 
 def get_blocked_ips():
     conn = get_db_connection()
+    if not conn:
+        return []
     cursor = conn.cursor()
     cursor.execute("SELECT ip FROM ips_bloqueadas")
     blocked_ips = [row[0] for row in cursor.fetchall()]
@@ -98,23 +115,69 @@ def get_blocked_ips():
 
 def get_excluded_ips():
     conn = get_db_connection()
+    if not conn:
+        return []
     cursor = conn.cursor()
     cursor.execute("SELECT ip FROM ips_excluidas")
     excluded_ips = [row[0] for row in cursor.fetchall()]
     conn.close()
     return excluded_ips
 
+def add_excluded_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        if ip not in get_excluded_ips():
+            cursor.execute("INSERT INTO ips_excluidas (ip) VALUES (?)", (ip,))
+            conn.commit()
+        conn.close()
+
+def remove_excluded_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ips_excluidas WHERE ip=?", (ip,))
+        conn.commit()
+        conn.close()
+
+def unblock_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ips_bloqueadas WHERE ip=?", (ip,))
+        command = f'netsh advfirewall firewall delete rule name="Bloqueo {ip}"'
+        subprocess.run(command, shell=True)
+        conn.commit()
+        conn.close()
+
+def block_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        if ip not in get_blocked_ips():
+            cursor.execute("INSERT INTO ips_bloqueadas (ip) VALUES (?)", (ip,))
+            command = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
+            subprocess.run(command, shell=True)
+            conn.commit()
+        conn.close()
+
 def get_events():
     conn = get_db_connection()
+    if not conn:
+        return []
     cursor = conn.cursor()
     cursor.execute("SELECT id, tipo_ataque, ip_origen, paquetes, timestamp FROM eventos ORDER BY timestamp DESC")
-    events = cursor.fetchall()
+    eventos = [{"id": row[0], "tipo_ataque": row[1], "ip_origen": row[2], "paquetes": row[3], "timestamp": row[4]} for row in cursor.fetchall()]
     conn.close()
-    return events
+    return eventos
 
 @app.route('/')
 def index():
     return render_template("index.html")
+
+@app.route('/scan_status', methods=['GET'])
+def scan_status():
+    return jsonify({"status": scan_active})
 
 @app.route('/ver_eventos')
 def ver_eventos():
@@ -129,12 +192,15 @@ def configuracion_ips():
 
 @app.route('/block_ip', methods=['POST'])
 def block_ip_route():
-    data = request.json
-    ip = data.get("ip")
-    if ip:
+    try:
+        data = request.json
+        ip = data.get("ip")
+        if not ip:
+            return jsonify({"error": "No se proporcionó una IP válida."}), 400
         block_ip(ip)
         return jsonify({"status": f"IP {ip} bloqueada."})
-    return jsonify({"error": "No se proporcionó una IP válida."}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/unblock_ip', methods=['POST'])
 def unblock_ip_route():

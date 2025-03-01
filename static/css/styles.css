@@ -8,18 +8,67 @@ h1, h2 {
     text-align: center;
 }
 
+/* Contenedor de la tabla para eventos y paquetes escaneados */
 .table-container {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid #ddd;
-    margin-top: 20px;
+    margin-top: 30px;  /* Ajustado para mejor separación */
 }
 
+/* Estilo para tablas */
 th, td {
     text-align: center;
     vertical-align: middle;
 }
 
+/* Botones */
 button {
     cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+/* Estilos al pasar el mouse sobre los botones */
+button:hover {
+    filter: brightness(90%);
+}
+
+/* Botones específicos */
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-warning {
+    background-color: #ffc107;
+    color: black;
+}
+
+.btn-warning:hover {
+    background-color: #e0a800;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #bd2130;
+}
+
+/* Asegurar que la tabla de paquetes escaneados tenga scroll si es necesario */
+#packetTable {
+    display: block;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Agregar margen a las tablas para mejor visualización */
+table {
+    margin-top: 15px;
 }

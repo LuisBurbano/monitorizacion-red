@@ -6,32 +6,44 @@
     <script src="{{ url_for('static', filename='js/configuracion.js') }}" defer></script>
 </head>
 <body class="container mt-5">
+    <button onclick="window.location.href='/'" class="btn btn-secondary mb-3">
+        Volver a la Página Principal
+    </button>
     <h1 class="text-center">Gestión de IPs</h1>
 
     <h2>IPs Excluidas</h2>
     <input type="text" id="excludeIpInput" class="form-control mb-2" placeholder="Agregar IP a Excluir">
     <button class="btn btn-warning" onclick="addExcludedIp()">Agregar</button>
 
-    <h2>IPs Bloqueadas</h2>
-    <input type="text" id="blockIpInput" class="form-control mb-2" placeholder="Agregar IP a Bloquear">
-    <button class="btn btn-danger" onclick="blockIp()">Bloquear</button>
-
-    <h2 class="mt-4">IPs Guardadas</h2>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>IP</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for ip in blocked_ips %}
-            <tr>
-                <td>{{ ip }}</td>
-                <td><button class="btn btn-success" onclick="unblockIp('{{ ip }}')">Desbloquear</button></td>
-            </tr>
+    <ul class="list-group mt-3">
+        {% if excluded_ips %}
+            {% for ip in excluded_ips %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ ip }}
+                    <button class="btn btn-danger btn-sm" onclick="removeExcludedIp('{{ ip }}')">Eliminar</button>
+                </li>
             {% endfor %}
-        </tbody>
-    </table>
+        {% else %}
+            <li class="list-group-item">No hay IPs excluidas.</li>
+        {% endif %}
+    </ul>
+
+    <h2 class="mt-4">IPs Bloqueadas</h2>
+    <input type="text" id="blockIpInput" class="form-control mb-2" placeholder="Agregar IP a Bloquear">
+    <button class="btn btn-danger" onclick="addBlockedIp()">Bloquear</button>
+
+    <ul class="list-group mt-3">
+        {% if blocked_ips %}
+            {% for ip in blocked_ips %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ ip }}
+                    <button class="btn btn-success btn-sm" onclick="unblockIp('{{ ip }}')">Desbloquear</button>
+                </li>
+            {% endfor %}
+        {% else %}
+            <li class="list-group-item">No hay IPs bloqueadas.</li>
+        {% endif %}
+    </ul>
+
 </body>
 </html>
