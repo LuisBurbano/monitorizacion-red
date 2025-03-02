@@ -1,14 +1,10 @@
-import subprocess, sqlite3, os, json, socket, time
+import subprocess, sqlite3, os, json, socket, time, pytz
 from flask import Flask, render_template, jsonify, request
 from threading import Thread, Event
-from scapy.all import sniff
+from scapy.all import sniff, conf
+from datetime import datetime
 
 app = Flask(__name__)
-
-scan_active = False
-detected_packets = []
-alerts = []  
-stop_event = Event()
 
 DB_PATH = "datos.db"
 
@@ -41,7 +37,7 @@ def init_db():
                 ip TEXT UNIQUE NOT NULL
             )
         """)
-
+        # 🔹 Nueva tabla para almacenar el estado del escaneo
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS config (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -49,7 +45,9 @@ def init_db():
             )
         """)
 
+        # 🔹 Asegurar que siempre hay un valor en config
         cursor.execute("INSERT OR IGNORE INTO config (id, scan_active) VALUES (1, 0)")
+        
         conn.commit()
     except sqlite3.Error as e:
         print(f"Error al inicializar la base de datos: {e}")
@@ -59,31 +57,57 @@ def init_db():
 init_db()
 
 # 🔹 Variables Globales
-packet_timestamps = {}  
-port_scanning_attempts = {}  
-brute_force_attempts = {}  
-spoofed_ips = set()  
+scan_active = False
+detected_packets = []
+alerts = []
+stop_event = Event()
+packet_timestamps = {}  # Rastreo de paquetes por IP para detección de DDoS
+port_scanning_attempts = {}  # Rastreo de escaneo de puertos
+brute_force_attempts = {}  # Rastreo de intentos de fuerza bruta
+spoofed_ips = set()  # Rastreo de IPs sospechosas de Spoofing
+mac_tracking = {}  # Última MAC detectada por cada IP
+
+# 🔹 Obtener IP local y la IP del router (gateway predeterminado)
 LOCAL_IP = socket.gethostbyname(socket.gethostname())  
+ROUTER_IP = conf.route.route("0.0.0.0")[2]
 
 # 🔹 Parámetros de detección
-TIME_WINDOW = 10  
-BLOCK_THRESHOLD = 50  
-PORT_SCAN_THRESHOLD = 10  
-BRUTE_FORCE_THRESHOLD = 5  
-SUSPICIOUS_PORTS = {22, 3389, 80, 443}  
+TIME_WINDOW = 15  # Segundos para detectar DDoS y escaneo de puertos
+BLOCK_THRESHOLD = 100  # Máximo de paquetes antes de bloquear una IP (DDoS)
+PORT_SCAN_THRESHOLD = 10  # Máximo de puertos escaneados antes de bloqueo
+BRUTE_FORCE_THRESHOLD = 5  # Intentos de acceso a puertos sensibles antes de bloqueo
+SUSPICIOUS_PORTS = {22, 3389, 80, 443}  # Puertos críticos que podrían ser atacados
+
+# 🔹 Función para capturar paquetes cuando el escaneo está activo
+# Diccionario para contar paquetes por IP
+packet_count = {}
+
+# Obtener zona horaria local de la máquina
+LOCAL_TZ = pytz.timezone("America/Mexico_City")  # Cambia según tu ubicación
+
+def get_local_timestamp():
+    """ Devuelve la hora actual en la zona horaria local """
+    return datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
 
 def save_event(tipo_ataque, ip_origen, paquetes):
+    """
+    Guarda un evento sospechoso en la base de datos con hora local.
+    """
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO eventos (tipo_ataque, ip_origen, paquetes)
-            VALUES (?, ?, ?)
-        """, (tipo_ataque, ip_origen, paquetes))
+            INSERT INTO eventos (tipo_ataque, ip_origen, paquetes, timestamp)
+            VALUES (?, ?, ?, ?)
+        """, (tipo_ataque, ip_origen, paquetes, get_local_timestamp()))
         conn.commit()
         conn.close()
 
 def get_scan_status():
+    """
+    Obtiene el estado actual del escaneo desde la base de datos.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT scan_active FROM config WHERE id = 1")
@@ -91,13 +115,19 @@ def get_scan_status():
     conn.close()
     return bool(result[0]) if result else False
 
+# 🔹 Actualiza el estado del escaneo en la base de datos
 def set_scan_status(status):
+    """
+    Actualiza el estado del escaneo en la base de datos.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE config SET scan_active = ? WHERE id = 1", (1 if status else 0,))
     conn.commit()
     conn.close()
 
+
+# 🔹 Función para capturar y analizar tráfico en tiempo real
 def capture_traffic():
     global detected_packets, packet_timestamps, port_scanning_attempts, brute_force_attempts, spoofed_ips
 
@@ -109,8 +139,8 @@ def capture_traffic():
             ip_src = packet["IP"].src
             ip_dst = packet["IP"].dst
 
-            # 🚫 Ignorar la IP de la máquina local
-            if ip_src == LOCAL_IP:
+            # 🚫 Ignorar la IP local y la IP del router
+            if ip_src == LOCAL_IP or ip_src == ROUTER_IP:
                 return  
 
             # 🚫 Ignorar IPs excluidas
@@ -129,12 +159,13 @@ def capture_traffic():
             if ip_src not in packet_timestamps:
                 packet_timestamps[ip_src] = []
             packet_timestamps[ip_src].append(now)
-            packet_timestamps[ip_src] = [t for t in packet_timestamps[ip_src] if now - t <= TIME_WINDOW]
 
+            # Limpiar registros viejos y verificar si excede el umbral
+            packet_timestamps[ip_src] = [t for t in packet_timestamps[ip_src] if now - t <= TIME_WINDOW]
             if len(packet_timestamps[ip_src]) > BLOCK_THRESHOLD:
                 save_event("Ataque DDoS Detectado", ip_src, len(packet_timestamps[ip_src]))
                 block_ip(ip_src)
-                packet_timestamps[ip_src] = []
+                packet_timestamps[ip_src] = []  # Resetear contador
 
             # 📌 Detección de Escaneo de Puertos
             if packet.haslayer("TCP") or packet.haslayer("UDP"):
@@ -169,12 +200,13 @@ def capture_traffic():
     while scan_active and not stop_event.is_set():
         sniff(prn=process_packet, store=False, timeout=5)
 
+# 🔹 API para controlar el escaneo de tráfico
 @app.route('/toggle_scan', methods=['POST'])
 def toggle_scan():
     global scan_active, stop_event
 
-    scan_active = not get_scan_status()  
-    set_scan_status(scan_active)  
+    scan_active = not get_scan_status()  # 🔹 Alternar estado real de la BD
+    set_scan_status(scan_active)  # 🔹 Guardar nuevo estado en la BD
 
     if scan_active:
         stop_event.clear()
@@ -185,19 +217,119 @@ def toggle_scan():
 
     return jsonify({"status": scan_active})
 
+@app.route('/get_ip_stats', methods=['GET'])
+def get_ip_stats():
+    """
+    Retorna la cantidad de paquetes enviados por cada IP en el escaneo.
+    """
+    ip_stats = {ip: len(timestamps) for ip, timestamps in packet_timestamps.items()}
+    return jsonify(ip_stats)
+
+
 @app.route('/get_alerts', methods=['GET'])
 def get_alerts():
     global alerts
-    return jsonify(alerts)  
+    return jsonify(alerts)  # Enviar las alertas acumuladas al frontend
 
+# 🔹 API para obtener paquetes en tiempo real
 @app.route('/get_packets', methods=['GET'])
 def get_packets():
     return jsonify(detected_packets)
 
-@app.route('/get_ip_stats', methods=['GET'])
-def get_ip_stats():
-    ip_stats = {ip: len(timestamps) for ip, timestamps in packet_timestamps.items()}
-    return jsonify(ip_stats)
+# 🔹 Funciones de base de datos con manejo de errores
+def get_db_connection():
+    try:
+        return sqlite3.connect(DB_PATH)
+    except sqlite3.Error as e:
+        print(f"Error al conectar a la base de datos: {e}")
+        return None
+
+def get_blocked_ips():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("SELECT ip FROM ips_bloqueadas")
+    blocked_ips = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return blocked_ips
+
+def get_excluded_ips():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("SELECT ip FROM ips_excluidas")
+    excluded_ips = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return excluded_ips
+
+def add_excluded_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        if ip not in get_excluded_ips():
+            cursor.execute("INSERT INTO ips_excluidas (ip) VALUES (?)", (ip,))
+            conn.commit()
+        conn.close()
+
+def remove_excluded_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ips_excluidas WHERE ip=?", (ip,))
+        conn.commit()
+        conn.close()
+
+def unblock_ip(ip):
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ips_bloqueadas WHERE ip=?", (ip,))
+        command = f'netsh advfirewall firewall delete rule name="Bloqueo {ip}"'
+        subprocess.run(command, shell=True)
+        conn.commit()
+        conn.close()
+
+def block_ip(ip):
+    global alerts
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        if ip not in get_blocked_ips():
+            cursor.execute("INSERT INTO ips_bloqueadas (ip) VALUES (?)", (ip,))
+            command = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
+            subprocess.run(command, shell=True)
+            conn.commit()
+
+            # Registrar alerta
+            alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
+
+        conn.close()
+
+
+def get_events():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, tipo_ataque, ip_origen, paquetes, timestamp FROM eventos ORDER BY timestamp DESC")
+    eventos = [{"id": row[0], "tipo_ataque": row[1], "ip_origen": row[2], "paquetes": row[3], "timestamp": row[4]} for row in cursor.fetchall()]
+    conn.close()
+    return eventos
+
+@app.route('/')
+def index():
+    return render_template("index.html")
+
+@app.route('/scan_status', methods=['GET'])
+def scan_status():
+    return jsonify({"status": get_scan_status()})  # Obtener el estado real desde la BD
+
+@app.route('/ver_eventos')
+def ver_eventos():
+    eventos = get_events()
+    return render_template("ver_eventos.html", eventos=eventos)
 
 @app.route('/configuracion_ips')
 def configuracion_ips():
@@ -205,10 +337,44 @@ def configuracion_ips():
                            blocked_ips=get_blocked_ips(), 
                            excluded_ips=get_excluded_ips())
 
-@app.route('/ver_eventos')
-def ver_eventos():
-    eventos = get_events()
-    return render_template("ver_eventos.html", eventos=eventos)
+@app.route('/block_ip', methods=['POST'])
+def block_ip_route():
+    try:
+        data = request.json
+        ip = data.get("ip")
+        if not ip:
+            return jsonify({"error": "No se proporcionó una IP válida."}), 400
+        block_ip(ip)
+        return jsonify({"status": f"IP {ip} bloqueada."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/unblock_ip', methods=['POST'])
+def unblock_ip_route():
+    data = request.json
+    ip = data.get("ip")
+    if ip:
+        unblock_ip(ip)
+        return jsonify({"status": f"IP {ip} desbloqueada."})
+    return jsonify({"error": "No se proporcionó una IP válida."}), 400
+
+@app.route('/add_excluded_ip', methods=['POST'])
+def add_excluded_ip_route():
+    data = request.json
+    ip = data.get("ip")
+    if ip:
+        add_excluded_ip(ip)
+        return jsonify({"status": f"IP {ip} excluida."})
+    return jsonify({"error": "No se proporcionó una IP válida."}), 400
+
+@app.route('/remove_excluded_ip', methods=['POST'])
+def remove_excluded_ip_route():
+    data = request.json
+    ip = data.get("ip")
+    if ip:
+        remove_excluded_ip(ip)
+        return jsonify({"status": f"IP {ip} eliminada de la exclusión."})
+    return jsonify({"error": "No se proporcionó una IP válida."}), 400
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0')
