@@ -1,4 +1,4 @@
-import subprocess, sqlite3, os, json
+import subprocess, sqlite3, os, json, socket, time
 from flask import Flask, render_template, jsonify, request
 from threading import Thread, Event
 from scapy.all import sniff
@@ -7,6 +7,7 @@ app = Flask(__name__)
 
 scan_active = False
 detected_packets = []
+alerts = []  # Lista de alertas
 stop_event = Event()
 
 DB_PATH = "datos.db"
@@ -40,6 +41,16 @@ def init_db():
                 ip TEXT UNIQUE NOT NULL
             )
         """)
+        # 🔹 Nueva tabla para almacenar el estado del escaneo
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                scan_active INTEGER DEFAULT 0
+            )
+        """)
+
+        # 🔹 Asegurar que siempre hay un valor en config
+        cursor.execute("INSERT OR IGNORE INTO config (id, scan_active) VALUES (1, 0)")
         
         conn.commit()
     except sqlite3.Error as e:
@@ -50,8 +61,53 @@ def init_db():
 init_db()
 
 # 🔹 Función para capturar paquetes cuando el escaneo está activo
+# Diccionario para contar paquetes por IP
+packet_count = {}
+LOCAL_IP = socket.gethostbyname(socket.gethostname())  # Obtener la IP de la máquina local
+packet_timestamps = {}  # Tiempos en que se recibieron los paquetes
+
+BLOCK_THRESHOLD = 50  # Límite de paquetes
+TIME_WINDOW = 10  # Tiempo en segundos para contar paquetes
+
+def save_event(tipo_ataque, ip_origen, paquetes):
+    """
+    Guarda un evento sospechoso en la base de datos.
+    """
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO eventos (tipo_ataque, ip_origen, paquetes)
+            VALUES (?, ?, ?)
+        """, (tipo_ataque, ip_origen, paquetes))
+        conn.commit()
+        conn.close()
+
+def get_scan_status():
+    """
+    Obtiene el estado actual del escaneo desde la base de datos.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT scan_active FROM config WHERE id = 1")
+    result = cursor.fetchone()
+    conn.close()
+    return bool(result[0]) if result else False
+
+
+def set_scan_status(status):
+    """
+    Actualiza el estado del escaneo en la base de datos.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE config SET scan_active = ? WHERE id = 1", (1 if status else 0,))
+    conn.commit()
+    conn.close()
+
+
 def capture_traffic():
-    global detected_packets
+    global detected_packets, packet_count, packet_timestamps
 
     def process_packet(packet):
         if not scan_active or stop_event.is_set():
@@ -61,10 +117,14 @@ def capture_traffic():
             ip_src = packet["IP"].src
             ip_dst = packet["IP"].dst
 
-            # 🚨 Filtrar IPs excluidas
-            excluded_ips = get_excluded_ips()  # Obtiene la lista de IPs excluidas
+            # 🚫 Ignorar la IP de la máquina local
+            if ip_src == LOCAL_IP:
+                return  
+
+            # 🚫 Ignorar IPs excluidas
+            excluded_ips = get_excluded_ips()
             if ip_src in excluded_ips or ip_dst in excluded_ips:
-                return  # ❌ Ignorar paquete si la IP está en la lista de excluidas
+                return  
 
             detected_packets.append({
                 "origen": ip_src,
@@ -72,22 +132,36 @@ def capture_traffic():
                 "protocolo": packet.summary()
             })
 
-        if len(detected_packets) > 50:  # Evita que la lista crezca indefinidamente
+            # 📌 Control de paquetes en la ventana de tiempo
+            current_time = time.time()
+
+            # Inicializar lista de timestamps para esta IP
+            if ip_src not in packet_timestamps:
+                packet_timestamps[ip_src] = []
+            packet_timestamps[ip_src].append(current_time)
+
+            # Mantener solo paquetes dentro de los últimos TIME_WINDOW segundos
+            packet_timestamps[ip_src] = [t for t in packet_timestamps[ip_src] if current_time - t <= TIME_WINDOW]
+
+            # 🔥 Si la IP envía más de BLOCK_THRESHOLD paquetes en TIME_WINDOW segundos, bloquearla
+            if len(packet_timestamps[ip_src]) > BLOCK_THRESHOLD:
+                save_event("Posible ataque DDoS", ip_src, len(packet_timestamps[ip_src]))
+                block_ip(ip_src)
+                packet_timestamps[ip_src] = []  # 🔄 Reiniciar el contador
+
+        if len(detected_packets) > 50:  # Evita crecimiento infinito
             detected_packets.pop(0)
 
     while scan_active and not stop_event.is_set():
         sniff(prn=process_packet, store=False, timeout=5)
 
-
 # 🔹 API para controlar el escaneo de tráfico
-@app.route('/toggle_scan', methods=['POST', 'GET'])
+@app.route('/toggle_scan', methods=['POST'])
 def toggle_scan():
     global scan_active, stop_event
 
-    if request.method == 'GET':
-        return jsonify({"status": scan_active})
-
-    scan_active = not scan_active
+    scan_active = not get_scan_status()  # 🔹 Alternar estado real de la BD
+    set_scan_status(scan_active)  # 🔹 Guardar nuevo estado en la BD
 
     if scan_active:
         stop_event.clear()
@@ -96,7 +170,21 @@ def toggle_scan():
     else:
         stop_event.set()
 
-    return jsonify({"status": scan_active}), 200
+    return jsonify({"status": scan_active})
+
+@app.route('/get_ip_stats', methods=['GET'])
+def get_ip_stats():
+    """
+    Retorna la cantidad de paquetes enviados por cada IP en el escaneo.
+    """
+    ip_stats = {ip: len(timestamps) for ip, timestamps in packet_timestamps.items()}
+    return jsonify(ip_stats)
+
+
+@app.route('/get_alerts', methods=['GET'])
+def get_alerts():
+    global alerts
+    return jsonify(alerts)  # Enviar las alertas acumuladas al frontend
 
 # 🔹 API para obtener paquetes en tiempo real
 @app.route('/get_packets', methods=['GET'])
@@ -159,6 +247,7 @@ def unblock_ip(ip):
         conn.close()
 
 def block_ip(ip):
+    global alerts
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor()
@@ -167,7 +256,12 @@ def block_ip(ip):
             command = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
             subprocess.run(command, shell=True)
             conn.commit()
+
+            # Registrar alerta
+            alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
+
         conn.close()
+
 
 def get_events():
     conn = get_db_connection()
@@ -185,7 +279,7 @@ def index():
 
 @app.route('/scan_status', methods=['GET'])
 def scan_status():
-    return jsonify({"status": scan_active})
+    return jsonify({"status": get_scan_status()})  # Obtener el estado real desde la BD
 
 @app.route('/ver_eventos')
 def ver_eventos():
