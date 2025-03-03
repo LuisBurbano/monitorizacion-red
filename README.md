@@ -9,7 +9,6 @@ Este proyecto enfocado en Windows 11 es un **sistema de monitorización de red**
   - **DDoS (Denegación de servicio distribuida)**
   - **Escaneo de Puertos**
   - **Ataques de Fuerza Bruta**
-  - **IP Spoofing**
 - 🖥 **Interfaz web dinámica** para visualizar eventos de seguridad.
 - 📝 **Registro de eventos en una base de datos SQLite**.
 - 🔍 **Búsqueda y filtrado de eventos**.
