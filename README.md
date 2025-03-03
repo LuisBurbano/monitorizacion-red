@@ -1,6 +1,6 @@
 # 🛡️ Monitorización de Red y Detección de Ataques
 
-Este proyecto es un **sistema de monitorización de red** basado en **Flask y Scapy**, diseñado para detectar actividades sospechosas en la red en tiempo real, incluyendo ataques **DDoS, escaneo de puertos, ataques de fuerza bruta e IP Spoofing**. El sistema permite bloquear automáticamente direcciones IP sospechosas y muestra alertas en una interfaz web.
+Este proyecto enfocado en Windows 11 es un **sistema de monitorización de red** basado en **Flask y Scapy**, diseñado para detectar actividades sospechosas en la red en tiempo real, incluyendo ataques **DDoS, escaneo de puertos, ataques de fuerza bruta e IP Spoofing**. El sistema permite bloquear automáticamente direcciones IP sospechosas y muestra alertas en una interfaz web.
 
 ## 📌 Características Principales
 - 📡 **Captura de tráfico en tiempo real** utilizando `Scapy`.
