@@ -298,8 +298,14 @@ def block_ip(ip):
         cursor = conn.cursor()
         if ip not in get_blocked_ips():
             cursor.execute("INSERT INTO ips_bloqueadas (ip) VALUES (?)", (ip,))
-            command = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
-            subprocess.run(command, shell=True)
+            
+            # 🔹 Bloquear tráfico entrante y saliente
+            command_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
+            command_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=out action=block remoteip={ip}'
+
+            subprocess.run(command_in, shell=True)
+            subprocess.run(command_out, shell=True)
+            
             conn.commit()
 
             # Registrar alerta
