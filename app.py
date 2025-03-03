@@ -83,7 +83,7 @@ SUSPICIOUS_PORTS = {22, 3389, 80, 443, 3306, 5432}  # Puertos críticos que podr
 packet_count = {}
 
 # Obtener zona horaria local de la máquina
-LOCAL_TZ = pytz.timezone("America/Mexico_City")  # Cambia según tu ubicación
+LOCAL_TZ = pytz.timezone("America/Guayaquil")  # 
 
 def get_local_timestamp():
     """ Devuelve la hora actual en la zona horaria local """
@@ -92,28 +92,28 @@ def get_local_timestamp():
 
 def save_event(tipo_ataque, ip_origen, paquetes):
     """
-    Guarda un evento sospechoso en la base de datos con hora local si aún no existe.
+    Guarda un evento sospechoso en la base de datos, verificando si ya existe un registro reciente.
     """
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor()
-        
-        # 🔹 Verificar si el evento ya está registrado en los últimos 10 minutos
+
+        # Verificar si el mismo evento ya fue registrado recientemente (en los últimos 10 segundos)
         cursor.execute("""
             SELECT COUNT(*) FROM eventos 
             WHERE tipo_ataque = ? AND ip_origen = ? 
-            AND timestamp >= datetime('now', '-10 minutes')
+            AND timestamp >= datetime('now', '-10 seconds')
         """, (tipo_ataque, ip_origen))
-        
-        exists = cursor.fetchone()[0]
-        
-        if exists == 0:  # Si no existe, insertarlo
+
+        existe = cursor.fetchone()[0]
+
+        if existe == 0:  # Solo registrar si no hay un evento similar reciente
             cursor.execute("""
                 INSERT INTO eventos (tipo_ataque, ip_origen, paquetes, timestamp)
                 VALUES (?, ?, ?, ?)
             """, (tipo_ataque, ip_origen, paquetes, get_local_timestamp()))
             conn.commit()
-        
+            
         conn.close()
 
 def get_scan_status():
@@ -304,34 +304,39 @@ def unblock_ip(ip):
         conn.close()
 
 def block_ip(ip):
+    """
+    Bloquea una IP en el firewall si no está ya bloqueada.
+    """
     global alerts
     conn = get_db_connection()
     if conn:
         cursor = conn.cursor()
-        
-        # 🔹 Verificar si la IP ya está bloqueada
+
+        # Verificar si la IP ya está bloqueada en la base de datos
         cursor.execute("SELECT COUNT(*) FROM ips_bloqueadas WHERE ip = ?", (ip,))
-        exists = cursor.fetchone()[0]
-        
-        if exists == 0:  # Solo bloquear si no existe
+        ya_bloqueada = cursor.fetchone()[0]
+
+        if ya_bloqueada == 0:  # Solo bloquear si no está en la base de datos
             cursor.execute("INSERT INTO ips_bloqueadas (ip) VALUES (?)", (ip,))
             
-            # 🔹 Verificar si la regla ya existe en el firewall
-            check_command = f'netsh advfirewall firewall show rule name="Bloqueo {ip}"'
-            result = subprocess.run(check_command, shell=True, capture_output=True, text=True)
-            
-            if "No rules match" in result.stdout:  # Si no existe, crear la regla
-                command_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip} entrada" dir=in action=block remoteip={ip}'
-                command_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip} salida" dir=out action=block remoteip={ip}'
-                
+            # 🔹 Verificar si ya existe una regla en el firewall antes de agregarla
+            reglas_actuales = subprocess.run(
+                "netsh advfirewall firewall show rule name=all",
+                shell=True, capture_output=True, text=True
+            ).stdout
+
+            if f"Bloqueo {ip}" not in reglas_actuales:
+                command_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
+                command_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=out action=block remoteip={ip}'
+
                 subprocess.run(command_in, shell=True)
                 subprocess.run(command_out, shell=True)
-                
-                conn.commit()
 
-                # Registrar alerta
-                alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
-        
+            conn.commit()
+
+            # Registrar alerta
+            alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
+
         conn.close()
 
 
