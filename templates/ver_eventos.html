@@ -4,7 +4,17 @@
 <head>
     <title>Eventos Detectados</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="{{ url_for('static', filename='js/eventos.js') }}" defer></script>
+    <style>
+        .sort-btn {
+            background: none;
+            border: none;
+            color: white;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+    </style>
 </head>
 
 <body class="container mt-5">
@@ -15,18 +25,33 @@
     </button>
 
     <div class="mb-3">
-        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por IP...">
+        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por IP o Tipo de Ataque...">
     </div>
 
     <div class="table-container">
         <table class="table table-striped">
             <thead class="table-dark">
                 <tr>
-                    <th>ID</th>
-                    <th>Tipo de Ataque</th>
-                    <th>IP Origen</th>
-                    <th>Paquetes</th>
-                    <th>Fecha</th>
+                    <th data-column="id" data-type="number">
+                        ID 
+                        <button class="sort-btn"><i class="fas fa-sort"></i></button>
+                    </th>
+                    <th data-column="tipo_ataque" data-type="string">
+                        Tipo de Ataque 
+                        <button class="sort-btn"><i class="fas fa-sort"></i></button>
+                    </th>
+                    <th data-column="ip_origen" data-type="string">
+                        IP Origen 
+                        <button class="sort-btn"><i class="fas fa-sort"></i></button>
+                    </th>
+                    <th data-column="paquetes" data-type="number">
+                        Paquetes 
+                        <button class="sort-btn"><i class="fas fa-sort"></i></button>
+                    </th>
+                    <th data-column="timestamp" data-type="date">
+                        Fecha 
+                        <button class="sort-btn"><i class="fas fa-sort"></i></button>
+                    </th>
                 </tr>
             </thead>
             <tbody id="eventTable">
@@ -52,27 +77,3 @@
 </body>
 
 </html>
-<script>
-    function loadEventos() {
-        fetch('/get_packets')
-            .then(response => response.json())
-            .then(data => {
-                let tableBody = document.getElementById("eventosTableBody");
-                tableBody.innerHTML = ""; // Limpiar la tabla
-
-                data.forEach(evento => {
-                    let row = `<tr>
-                        <td>${evento.id}</td>
-                        <td>${evento.tipo_ataque}</td>
-                        <td>${evento.ip_origen}</td>
-                        <td>${evento.paquetes}</td>
-                        <td>${evento.timestamp}</td>
-                    </tr>`;
-                    tableBody.innerHTML += row;
-                });
-            });
-    }
-
-    loadEventos(); // Cargar eventos al abrir la página
-    setInterval(loadEventos, 5000); // Actualizar cada 5 segundos
-</script>

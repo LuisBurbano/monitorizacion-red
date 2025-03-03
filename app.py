@@ -76,7 +76,7 @@ TIME_WINDOW = 15  # Segundos para detectar DDoS y escaneo de puertos
 BLOCK_THRESHOLD = 100  # Máximo de paquetes antes de bloquear una IP (DDoS)
 PORT_SCAN_THRESHOLD = 10  # Máximo de puertos escaneados antes de bloqueo
 BRUTE_FORCE_THRESHOLD = 5  # Intentos de acceso a puertos sensibles antes de bloqueo
-SUSPICIOUS_PORTS = {22, 3389, 80, 443}  # Puertos críticos que podrían ser atacados
+SUSPICIOUS_PORTS = {22, 3389, 80, 443, 3306, 5432}  # Puertos críticos que podrían ser atacados
 
 # 🔹 Función para capturar paquetes cuando el escaneo está activo
 # Diccionario para contar paquetes por IP
@@ -191,11 +191,11 @@ def capture_traffic():
                     brute_force_attempts[ip_src] = 0
 
             # 📌 Detección de IP Spoofing
-            if ip_src in spoofed_ips:
-                save_event("Ataque de IP Spoofing Detectado", ip_src, 1)
-                block_ip(ip_src)
-            else:
-                spoofed_ips.add(ip_src)
+            #if ip_src in spoofed_ips:
+            #    save_event("Ataque de IP Spoofing Detectado", ip_src, 1)
+            #    block_ip(ip_src)
+            #else:
+            #    spoofed_ips.add(ip_src)
 
     while scan_active and not stop_event.is_set():
         sniff(prn=process_packet, store=False, timeout=5)

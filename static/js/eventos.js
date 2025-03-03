@@ -2,40 +2,48 @@ document.addEventListener("DOMContentLoaded", function () {
     let searchInput = document.getElementById("searchInput");
     let eventTable = document.getElementById("eventTable");
     let headers = document.querySelectorAll("th");
+    let sortButtons = document.querySelectorAll(".sort-btn");
 
-    function sortTableBy(columnIndex, ascending = true) {
+    // 🔹 Función para ordenar la tabla
+    function sortTableBy(columnIndex, columnType, order, button) {
         let rows = Array.from(eventTable.getElementsByTagName("tr"));
-        rows.shift(); // Omitir encabezados si están presentes
 
         rows.sort((a, b) => {
             let aValue = a.cells[columnIndex].textContent.trim();
             let bValue = b.cells[columnIndex].textContent.trim();
 
-            if (columnIndex === 0) { // Ordenar por ID (número)
+            if (columnType === "number") {
                 aValue = parseInt(aValue);
                 bValue = parseInt(bValue);
-            } else if (columnIndex === 4) { // Ordenar por fecha
+            } else if (columnType === "date") {
                 aValue = new Date(aValue).getTime();
                 bValue = new Date(bValue).getTime();
             }
 
-            return ascending ? aValue - bValue : bValue - aValue;
+            return order === "asc" ? aValue - bValue : bValue - aValue;
         });
 
-        eventTable.innerHTML = ""; // Limpiar tabla y volver a insertar filas ordenadas
+        eventTable.innerHTML = "";
         rows.forEach(row => eventTable.appendChild(row));
+
+        // 🔹 Cambiar el icono de ordenación
+        sortButtons.forEach(btn => btn.querySelector("i").className = "fas fa-sort"); // Reset icons
+        button.querySelector("i").className = order === "asc" ? "fas fa-sort-up" : "fas fa-sort-down";
     }
 
-    // Agregar evento de ordenación en encabezados
-    headers.forEach((header, index) => {
-        header.addEventListener("click", () => {
-            let ascending = header.getAttribute("data-asc") === "true"; // Alternar orden
-            sortTableBy(index, !ascending);
-            header.setAttribute("data-asc", !ascending); // Guardar estado
+    // 🔹 Agregar evento de ordenación en encabezados
+    sortButtons.forEach((button, index) => {
+        button.addEventListener("click", function () {
+            let columnType = headers[index].getAttribute("data-type");
+            let currentOrder = headers[index].getAttribute("data-order") || "desc";
+            let newOrder = currentOrder === "asc" ? "desc" : "asc";
+
+            sortTableBy(index, columnType, newOrder, button);
+            headers[index].setAttribute("data-order", newOrder); // Guardar estado
         });
     });
 
-    // Filtrado por IP
+    // 🔹 Filtrado por IP y Tipo de Ataque
     searchInput.addEventListener("keyup", function () {
         let filter = searchInput.value.toLowerCase();
         let rows = eventTable.getElementsByTagName("tr");
@@ -46,7 +54,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
         for (let row of rows) {
             let ipCell = row.cells.length > 2 ? row.cells[2].textContent.toLowerCase() : "";
-            row.style.display = ipCell.includes(filter) ? "" : "none";
+            let attackCell = row.cells.length > 1 ? row.cells[1].textContent.toLowerCase() : "";
+            row.style.display = ipCell.includes(filter) || attackCell.includes(filter) ? "" : "none";
         }
     });
 
