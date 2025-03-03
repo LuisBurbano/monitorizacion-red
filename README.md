@@ -20,21 +20,18 @@ Este proyecto enfocado en Windows 11 es un **sistema de monitorización de red**
 Asegúrate de tener instalados los siguientes componentes:
 
 - Python 3.8+
-- Flask
-- Scapy
-- SQLite3
-- `pytz` (para manejo de zonas horarias)
+- Npcap: Packet capture library for Windows
 
-Para instalar las dependencias, usa:
+Puedes instalar Npcap desde: 
 ```bash
-pip install flask scapy pytz
+https://npcap.com/#download
 ```
 
 ## 📥 Instalación
 
 1. **Clona el repositorio:**
 ```bash
-git clone https://github.com/tu-usuario/monitorizacion-red.git
+git clone https://github.com/LuisBurbano/monitorizacion-red.git
 cd monitorizacion-red
 ```
 2. **Configura un entorno virtual (opcional pero recomendado):**
@@ -100,8 +97,4 @@ netsh advfirewall firewall show rule name=all
 
 ## 📜 Licencia
 Este proyecto está bajo la licencia **MIT**. Puedes usarlo y modificarlo libremente.
-
----
-📌 **Autor:** [Tu Nombre]  
-🌍 **Repositorio:** [GitHub Link]  
 
