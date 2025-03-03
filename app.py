@@ -1,4 +1,4 @@
-import subprocess, sqlite3, os, json, socket, time, pytz
+import subprocess, sqlite3, os, json, socket, time, pytz, psutil
 from flask import Flask, render_template, jsonify, request
 from threading import Thread, Event
 from scapy.all import sniff, conf
@@ -55,6 +55,20 @@ def init_db():
         conn.close()
 
 init_db()
+
+def get_local_ips():
+    """
+    Obtiene todas las direcciones IP asociadas a la máquina.
+    """
+    local_ips = []
+    for interface, addrs in psutil.net_if_addrs().items():
+        for addr in addrs:
+            if addr.family == socket.AF_INET:
+                local_ips.append(addr.address)
+    return local_ips
+
+# Excluir todas las IPs de la máquina
+LOCAL_IPS = get_local_ips()
 
 # 🔹 Variables Globales
 scan_active = False
@@ -152,7 +166,7 @@ def capture_traffic():
             ip_dst = packet["IP"].dst
 
             # 🚫 Ignorar la IP local y la IP del router
-            if ip_src == LOCAL_IP or ip_src == ROUTER_IP:
+            if ip_src == LOCAL_IPS or ip_src == ROUTER_IP:
                 return  
 
             # 🚫 Ignorar IPs excluidas
