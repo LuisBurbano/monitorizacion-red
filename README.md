@@ -75,7 +75,6 @@ El sistema analiza el tráfico y detecta diferentes ataques con base en umbrales
 | **DDoS** | Más de `100` paquetes en `15s` desde una misma IP | Bloqueo automático |
 | **Escaneo de Puertos** | Más de `10` intentos de conexión a diferentes puertos | Bloqueo automático |
 | **Fuerza Bruta** | Más de `5` intentos en puertos sensibles (22, 3389, 80, 443) | Bloqueo automático |
-| **IP Spoofing** | Si una IP cambia su dirección MAC repetidamente | Bloqueo automático |
 
 ## 📄 Base de Datos
 El sistema usa **SQLite** para almacenar los eventos de seguridad. La base de datos `datos.db` contiene las siguientes tablas:
