@@ -312,10 +312,24 @@ def unblock_ip(ip):
     if conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM ips_bloqueadas WHERE ip=?", (ip,))
-        command = f'netsh advfirewall firewall delete rule name="Bloqueo {ip}"'
-        subprocess.run(command, shell=True)
+        
+        # Eliminar reglas de bloqueo de tráfico TCP/UDP
+        command_in = f'netsh advfirewall firewall delete rule name="Bloqueo {ip}"'
+        command_out = f'netsh advfirewall firewall delete rule name="Bloqueo {ip}"'
+        
+        # Eliminar reglas de bloqueo de tráfico ICMP
+        command_icmp_in = f'netsh advfirewall firewall delete rule name="Bloqueo {ip} ICMP"'
+        command_icmp_out = f'netsh advfirewall firewall delete rule name="Bloqueo {ip} ICMP"'
+        
+        # Ejecutar comandos para eliminar reglas en Windows
+        subprocess.run(command_in, shell=True)
+        subprocess.run(command_out, shell=True)
+        subprocess.run(command_icmp_in, shell=True)
+        subprocess.run(command_icmp_out, shell=True)
+
         conn.commit()
         conn.close()
+
 
 def block_ip(ip):
     """
