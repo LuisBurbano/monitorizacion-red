@@ -354,27 +354,26 @@ def block_ip(ip):
             ).stdout
 
             if f"Bloqueo {ip}" not in reglas_actuales:
-            # Bloquear tráfico entrante y saliente para la IP especificada (TCP/UDP y otros protocolos)
-            command_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
-            command_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=out action=block remoteip={ip}'
-            
-            # Bloquear tráfico ICMP (ping) específicamente
-            command_icmp_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip} ICMP" dir=in action=block remoteip={ip} protocol=ICMPv4'
-            command_icmp_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip} ICMP" dir=out action=block remoteip={ip} protocol=ICMPv4'
+                # Bloquear tráfico entrante y saliente para la IP especificada (TCP/UDP y otros protocolos)
+                command_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=in action=block remoteip={ip}'
+                command_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip}" dir=out action=block remoteip={ip}'
+                
+                # Bloquear tráfico ICMP (ping) específicamente
+                command_icmp_in = f'netsh advfirewall firewall add rule name="Bloqueo {ip} ICMP" dir=in action=block remoteip={ip} protocol=ICMPv4'
+                command_icmp_out = f'netsh advfirewall firewall add rule name="Bloqueo {ip} ICMP" dir=out action=block remoteip={ip} protocol=ICMPv4'
 
-            # Ejecutar comandos en Windows
-            subprocess.run(command_in, shell=True)
-            subprocess.run(command_out, shell=True)
-            subprocess.run(command_icmp_in, shell=True)
-            subprocess.run(command_icmp_out, shell=True)
+                # Ejecutar comandos en Windows
+                subprocess.run(command_in, shell=True)
+                subprocess.run(command_out, shell=True)
+                subprocess.run(command_icmp_in, shell=True)
+                subprocess.run(command_icmp_out, shell=True)
 
+                conn.commit()
 
-            conn.commit()
+                # Registrar alerta
+                alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
 
-            # Registrar alerta
-            alerts.append(f"¡IP {ip} ha sido bloqueada automáticamente por actividad sospechosa!")
-
-        conn.close()
+                conn.close()
 
 
 def get_events():
